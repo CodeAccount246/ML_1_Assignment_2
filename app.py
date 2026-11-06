@@ -23,9 +23,9 @@ st.markdown("---")
 st.sidebar.header("🕹️ Configuration Controls")
 
 uploaded_file = st.sidebar.file_uploader(
-    "Upload Test Data (CSV)", 
+    "Upload Data (CSV)", 
     type=["csv"],
-    help="Upload test_data.csv generated from training script."
+    help="Upload the raw netflix_titles.csv or the processed test_data.csv."
 )
 
 model_choice = st.sidebar.selectbox(
@@ -55,7 +55,30 @@ def load_scaler_and_model(name):
 
 if uploaded_file is not None:
     df_test = pd.read_csv(uploaded_file)
-    st.sidebar.success(f"Loaded {df_test.shape[0]} rows and {df_test.shape[1]} columns.")
+    
+    # --- DYNAMIC FEATURE ENGINEERING FOR RAW DATA ---
+    raw_required_columns = ['type', 'date_added', 'description', 'cast', 'listed_in', 'release_year']
+    
+    # Check if the uploaded dataset is the raw netflix_titles.csv by seeing if it has these textual columns
+    if all(col in df_test.columns for col in raw_required_columns):
+        st.sidebar.info("Raw dataset detected. Applying feature engineering...")
+        
+        # 1. Target column
+        df_test['target'] = (df_test['type'] == 'TV Show').astype(int)
+        
+        # 2. Extract Year
+        df_test['added_year'] = pd.to_datetime(df_test['date_added'].str.strip(), format='%B %d, %Y', errors='coerce').dt.year
+        
+        # 3. Calculate text lengths & list counts
+        df_test['desc_len'] = df_test['description'].fillna('').apply(len)
+        df_test['cast_count'] = df_test['cast'].fillna('').apply(lambda x: len(str(x).split(',')) if pd.notnull(x) and x != '' else 0)
+        df_test['listed_in_count'] = df_test['listed_in'].fillna('').apply(lambda x: len(str(x).split(',')) if pd.notnull(x) and x != '' else 0)
+        
+        # 4. Filter missing data to mirror training
+        features_to_check = ['release_year', 'added_year', 'desc_len', 'cast_count', 'listed_in_count', 'target']
+        df_test = df_test.dropna(subset=features_to_check)
+        
+    st.sidebar.success(f"Loaded {df_test.shape[0]} valid rows and {df_test.shape[1]} columns.")
     
     scaler, model = load_scaler_and_model(model_choice)
     
@@ -65,7 +88,7 @@ if uploaded_file is not None:
     if expected_features is not None:
         missing_cols = [col for col in expected_features if col not in df_test.columns]
         if missing_cols:
-            st.error(f"Uploaded CSV is missing expected features: {missing_cols}")
+            st.error(f"Uploaded CSV is missing expected features: {missing_cols}. Ensure you uploaded the correct Netflix CSV.")
             st.stop()
         
         # Ensure correct column order
@@ -141,4 +164,4 @@ if uploaded_file is not None:
         st.error(f"Prediction error: {e}")
 
 else:
-    st.info("👈 Upload `test_data.csv` using the sidebar to view evaluation metrics, confusion matrix, and classification report.")
+    st.info("👈 Upload `test_data.csv` or `netflix_titles.csv` using the sidebar to view evaluation metrics, confusion matrix, and classification report.")
